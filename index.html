@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Shaka HLS Input Player</title>
+    <meta name="referrer" content="no-referrer">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+    <script src="https://cdn.jsdelivr.net/npm/shaka-player@5.0.4/dist/shaka-player.ui.min.js" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shaka-player@5.0.4/dist/controls.min.css">
+
+    <style type="text/css">
+        body { margin: 0; padding: 0; background-color: #000; color: white; font-family: sans-serif; overflow: hidden; height: 100vh; width: 100vw; }
+        
+        /* Input Box Ka Style */
+        #input-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .input-group { width: 80%; max-width: 500px; margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; font-size: 14px; color: #ccc; }
+        input { 
+            width: 100%; padding: 12px; border: 1px solid #444; border-radius: 4px; 
+            background: #222; color: #fff; box-sizing: border-box; 
+        }
+        #play-btn { 
+            padding: 12px 40px; background: #e50914; color: white; border: none; 
+            border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px;
+        }
+        #play-btn:hover { background: #ff1a26; }
+
+        /* Video Container */
+        #app { width: 100vw; height: 100vh; }
+        .shaka-video-container { width: 100%; height: 100%; }
+        .shaka-video { width: 100%; height: 100%; object-fit: contain; }
+
+        /* Stats Style */
+        .shaka-stream-stats {
+            position: absolute; top: 10px; left: 10px; z-index: 30;
+            background: rgba(0, 0, 0, 0.4); border-radius: 6px; padding: 6px 8px;
+            font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.35s;
+        }
+        .shaka-stream-stats.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div id="input-container">
+    <h2 style="margin-bottom: 20px;">Shaka HLS Loader</h2>
+    <div class="input-group">
+        <label>M3U8 URL:</label>
+        <input type="text" id="m3u8-url" placeholder="https://example.com/video.m3u8">
+    </div>
+    <div class="input-group">
+        <label>Cookie String (Optional):</label>
+        <input type="text" id="cookie-str" placeholder="key1=value1; key2=value2">
+    </div>
+    <button id="play-btn">START PLAYING</button>
+</div>
+
+<div id="app">
+    <div class="shaka-video-container">
+        <video autoplay id="video" class="shaka-video"></video>
+    </div>
+</div>
+
+<script>
+    let player;
+    let ui;
+
+    // Button Click Event
+    document.getElementById('play-btn').addEventListener('click', () => {
+        const url = document.getElementById('m3u8-url').value;
+        const cookie = document.getElementById('cookie-str').value;
+
+        if (!url) {
+            alert("Bhai, m3u8 URL toh daal do!");
+            return;
+        }
+
+        // Hide inputs and start player
+        document.getElementById('input-container').style.display = 'none';
+        initializePlayer(url, cookie);
+    });
+
+    async function initializePlayer(streamUrl, cookieString) {
+        const videoContainer = document.querySelector('.shaka-video-container');
+        const videoElement = document.getElementById('video');
+
+        player = new shaka.Player();
+
+        // COOKIE & HEADER FILTER
+        player.getNetworkingEngine().registerRequestFilter((type, request) => {
+            request.allowCrossSiteCredentials = true;
+            if (cookieString) {
+                request.headers['Cookie'] = cookieString;
+            }
+        });
+
+        // UI Config
+        const uiConfig = {
+            controlPanelElements: [
+                'time_and_duration', 'mute', 'volume', 'skip_backward_5', 
+                'skip_forward_5', 'stream_stats', 'play_pause', 'spacer', 
+                'quality', 'overflow_menu', 'fullscreen'
+            ]
+        };
+
+        ui = new shaka.ui.Overlay(player, videoContainer, videoElement);
+        ui.configure(uiConfig);
+
+        player.configure({
+            manifest: { hls: { useFullBandwidthType: true } }
+        });
+
+        try {
+            await player.attach(videoElement);
+            await player.load(streamUrl);
+            console.log('HLS Loaded!');
+        } catch (error) {
+            console.error("Error:", error);
+            alert("Error loading stream. Check Console.");
+            document.getElementById('input-container').style.display = 'flex'; // Wapas input dikhao
+        }
+    }
+
+    // --- Stats & Buttons (Standard Shaka UI logic) ---
+    class StreamStatsElement extends shaka.ui.Element {
+        constructor(parent, controls) {
+            super(parent, controls);
+            this.div = document.createElement('div');
+            this.div.className = 'shaka-stream-stats';
+            controls.getControlsContainer().appendChild(this.div);
+            setInterval(() => {
+                const active = controls.getPlayer().getVariantTracks().find(t => t.active);
+                if (active) {
+                    this.div.classList.toggle('visible', controls.getControlsContainer().getAttribute('shown') === 'true');
+                    this.div.innerHTML = `${active.height}p | ${Math.round(active.bandwidth/1000)}kbps`;
+                }
+            }, 1000);
+        }
+    }
+    shaka.ui.Controls.registerElement('stream_stats', new shaka.ui.Element.Factory(() => StreamStatsElement));
+
+    // Custom Skip Buttons
+    const createSkipBtn = (isForward) => class extends shaka.ui.Element {
+        constructor(parent, controls) {
+            super(parent, controls);
+            this.btn = document.createElement('button');
+            this.btn.className = 'shaka-ui-icon';
+            this.btn.innerHTML = isForward ? '&#10145;' : '&#11013;'; // Simple arrows
+            this.parent.appendChild(this.btn);
+            this.eventManager.listen(this.btn, 'click', () => {
+                this.video.currentTime += (isForward ? 5 : -5);
+            });
+        }
+    };
+    shaka.ui.Controls.registerElement('skip_forward_5', new shaka.ui.Element.Factory(() => createSkipBtn(true)));
+    shaka.ui.Controls.registerElement('skip_backward_5', new shaka.ui.Element.Factory(() => createSkipBtn(false)));
+
+</script>
+</body>
+</html>
