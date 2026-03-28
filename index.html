@@ -1,97 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Shaka Player - High Quality</title>
-    <meta name="referrer" content="no-referrer">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <script src="https://cdn.jsdelivr.net/npm/shaka-player@4.11.0/dist/shaka-player.ui.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shaka-player@4.11.0/dist/controls.min.css">
-
+    <title>JW Player - Hotstar Stream</title>
+    <script src="https://ssl.p.jwpcdn.com/player/v/8.26.2/jwplayer.js"></script>
     <style>
-        body { margin: 0; background: #000; height: 100vh; width: 100vw; overflow: hidden; }
-        #video-container { width: 100%; height: 100%; }
-        video { width: 100%; height: 100%; object-fit: contain; }
-        
-        /* Stats Styling */
-        .custom-stats {
-            position: absolute; top: 10px; left: 10px; z-index: 10;
-            background: rgba(0,0,0,0.6); color: #adff2f;
-            padding: 5px 10px; border-radius: 4px; font-family: monospace;
-            font-size: 12px; pointer-events: none;
+        body { margin: 0; background: #000; }
+        #player-container {
+            width: 100vw;
+            height: 100vh;
         }
     </style>
 </head>
 <body>
 
-<div id="video-container" data-shaka-player-container>
-    <div id="stats" class="custom-stats">Loading Stats...</div>
-    <video id="video" data-shaka-player-video autoplay></video>
-</div>
+<div id="player-container"></div>
 
 <script>
-const manifestUri = "https://live11p.akt.hotstar-cdn.net/cmaf/live/2108387/inallow-ipl-2026/eng/1540065682/15mindvrm012ef2013414cb4b8782ca2fdb76b7ccd028march2026/master_a_stereo.m3u8";
-
-// Headers jo Hotstar mangta hai
-const hotstarHeaders = {
-    'Cookie': 'hdntl=exp=1774733408~acl=%2f*~id=2cda5fef548d9a445c3c6908253c265b~data=hdntl~hmac=84bfbbaff8eb79a7337337c67eafdaec04e1cfb3fe6d726c59ab5ed111697fcc',
-    'Origin': 'https://www.hotstar.com',
-    'Referer': 'https://www.hotstar.com/'
-};
-
-async function initApp() {
-    const video = document.getElementById('video');
-    const container = document.getElementById('video-container');
-    const player = new shaka.Player(video);
-    const ui = new shaka.ui.Overlay(player, container, video);
-
-    // Quality Selection aur baki controls config
-    const config = {
-        'controlPanelElements': [
-            'play_pause', 'time_and_duration', 'spacer', 
-            'quality', // Yeh Quality Selection button hai
-            'playback_rate', 'fullscreen', 'overflow_menu'
-        ],
-        'overflowMenuButtons': ['quality', 'language', 'playback_rate'],
-        'addSeekBar': true
+    const streamConfig = {
+        file: "https://live11p.akt.hotstar-cdn.net/cmaf/live/2108387/inallow-ipl-2026/eng/1540065682/15mindvrm012ef2013414cb4b8782ca2fdb76b7ccd028march2026/master_a_stereo.m3u8",
+        image: "https://img10.hotstar.com/image/upload/f_auto,q_90,w_256/sources/r1/cms/prod/8704/1764056908704-a",
+        cookie: "hdntl=exp=1774733408~acl=%2f*~id=2cda5fef548d9a445c3c6908253c265b~data=hdntl~hmac=84bfbbaff8eb79a7337337c67eafdaec04e1cfb3fe6d726c59ab5ed111697fcc"
     };
-    ui.configure(config);
 
-    // Network Filter: Headers inject karne ke liye
-    player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // Headers apply karein
-        Object.keys(hotstarHeaders).forEach(key => {
-            request.headers[key] = hotstarHeaders[key];
-        });
+    const playerInstance = jwplayer("player-container").setup({
+        playlist: [{
+            file: streamConfig.file,
+            image: streamConfig.image,
+            tracks: []
+        }],
+        width: "100%",
+        height: "100%",
+        autostart: true,
+        mute: true,
+        // Quality selection automatically handle ho jati hai m3u8 se
+        displaytitle: true,
+        preload: "auto",
+        hlsjsConfig: {
+            xhrSetup: function(xhr, url) {
+                // Cookies aur Headers yahan set hote hain
+                xhr.withCredentials = true;
+                xhr.setRequestHeader("Cookie", streamConfig.cookie);
+                // Note: Browser Referer header manually set karne se block kar sakta hai
+            }
+        }
     });
 
-    // Error handling
-    player.addEventListener('error', (event) => console.error('Error code', event.detail.code, 'object', event.detail));
+    // Quality Selection Control
+    playerInstance.on('ready', function() {
+        const levels = playerInstance.getQualityLevels();
+        console.log("Available Qualities:", levels);
+    });
 
-    // Stats Update Loop
-    setInterval(() => {
-        const stats = player.getStats();
-        const activeTrack = player.getVariantTracks().find(t => t.active);
-        if (activeTrack) {
-            document.getElementById('stats').innerHTML = 
-                `RES: ${activeTrack.height}p | BW: ${(activeTrack.bandwidth/1000).toFixed(0)}kbps | Data: ${(stats.bytesDownloaded/(1024*1024)).toFixed(2)} MB`;
-        }
-    }, 1000);
-
-    try {
-        await player.load(manifestUri);
-        console.log('The video has now been loaded!');
-    } catch (e) {
-        console.error('Unable to load!', e);
-    }
-}
-
-document.addEventListener('shaka-ui-loaded', initApp);
-document.addEventListener('DOMContentLoaded', () => {
-    // Shaka UI auto-load fallback
-    if (window.shaka) { shaka.polyfill.installAll(); }
-});
+    // Error Handling
+    playerInstance.on('error', function(e) {
+        console.error("JW Player Error:", e.message);
+    });
 </script>
 
 </body>
