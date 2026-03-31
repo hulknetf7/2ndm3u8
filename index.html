@@ -9,6 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     
     <script>
+        // Polyfill for Shaka Player compatibility
         if (!Map.prototype.getOrInsertComputed) {
             Map.prototype.getOrInsertComputed = function (key, compute) {
                 if (!this.has(key)) {
@@ -37,25 +38,26 @@
         @font-face { font-family: Roboto, sans-serif, 'Noto Sans', Arial, sans-serif; }
         * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; padding: 0; background-color: #000; color: white; font-family: Arial, sans-serif; overflow: hidden; height: 100dvh; width: 100dvw; }
-        #app { width: 100dvw; height: 100dvh; display: flex; flex-direction: column; background: #000; overflow: hidden; }
-        #shakaplayer { position: relative; background-color: black; width: 100dvw; height: 100dvh; overflow: hidden; }
+        #app { width: 100dvw; height: 100dvh; display: flex; flex-direction: column; background: #000; }
+        #shakaplayer { position: relative; width: 100dvw; height: 100dvh; background-color: black; }
         .shaka-video-container { position: relative; width: 100%; height: 100%; }
         .shaka-video { width: 100%; height: 100%; object-fit: contain; }
 
-        /* Stream Stats Styling */
+        /* Stats Overlay */
         .shaka-stream-stats { 
             position: absolute; top: 10px; left: 10px; z-index: 30; 
-            background: rgba(0, 0, 0, 0.4); border-radius: 6px; padding: 6px 8px; 
-            font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.95); 
+            background: rgba(0, 0, 0, 0.45); border-radius: 6px; padding: 8px; 
+            font-size: 12px; font-weight: 600; color: #fff; 
             pointer-events: none; opacity: 0; transition: opacity 0.35s ease;
         }
         .shaka-stream-stats.visible { opacity: 1; }
-        .stat-data { color: #ffe4b4; }
         .stat-res { color: #b4dcff; }
         .stat-bw { color: #b4ffd2; }
+        .stat-data { color: #ffe4b4; }
 
+        /* UI Icons & Buttons */
         .shaka-video-container .shaka-ui-icon { font-size: 35px !important; }
-        .shaka-bottom-controls { width: 96%; padding-bottom: 1%; z-index: 1; }
+        .shaka-bottom-controls { width: 96%; padding-bottom: 1%; }
         .shaka-controls-button-panel > * { color: #fff; background: none; border: 0; cursor: pointer; }
     </style>
 </head>
@@ -78,29 +80,34 @@ async function initializePlayer() {
     const videoContainer = document.querySelector('.shaka-video-container');
     const videoElement = document.getElementById('video');
 
-    // --- UPDATED STREAM DATA ---
+    // --- DATA UPDATED FROM JSON ---
     const streamInfo = {
-        streamUrl: "https://jiotvmblive.cdn.jio.com//bpk-tv/Star_Sports_HD1_BTS/output/index.mpd?__hdnea__=st=1774903949~exp=1774990349~acl=/*~hmac=cb15685ce0e2f83ea3db39ad0413216f3ae7aa65d50d88918003640bba0dc77a",
+        name: "Star Sports 1 HD",
+        streamUrl: "https://jiotvmblive.cdn.jio.com//bpk-tv/Star_Sports_HD1_BTS/output/index.mpd",
+        cookie: "__hdnea__=st=1774866416~exp=1774952816~acl=/*~hmac=965e1a550b5e18fb744cd0de1d8ff04404b14c26c3a9457f82baa3fc37a5d3fe",
         clearKeys: {
             "965dc2ddb1d85138ad787999a7f30ca5": "859695076e67fe961836b564db6d689c"
         },
-        userAgent: "@allinone_reborn",
-        cookie: "__hdnea__=st=1774903949~exp=1774990349~acl=/*~hmac=cb15685ce0e2f83ea3db39ad0413216f3ae7aa65d50d88918003640bba0dc77a",
-        streamPoster: "https://img.media.jio.com/tvpimages/76/32/301981_1749665664018_l_medium.jpg"
+        poster: "https://img.media.jio.com/tvpimages/76/32/301981_1749665664018_l_medium.jpg",
+        userAgent: "@allinone_reborn"
     };
 
-    videoElement.poster = streamInfo.streamPoster;
+    videoElement.poster = streamInfo.poster;
     videoElement.muted = true;
     videoElement.autoplay = true;
 
     player = new shaka.Player();
 
-    // Handling Cookie and User-Agent headers
+    // Handling Cookie & User-Agent
     player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // Apply cookie to all requests
         request.headers['Cookie'] = streamInfo.cookie;
-        // User-Agent can be tricky in browsers but added here for compatibility
         request.headers['User-Agent'] = streamInfo.userAgent;
+        
+        // Append cookie to URL if needed for some CDNs
+        if (type === shaka.net.NetworkingEngine.RequestType.SEGMENT || type === shaka.net.NetworkingEngine.RequestType.MANIFEST) {
+            const separator = request.uris[0].includes('?') ? '&' : '?';
+            request.uris[0] += separator + streamInfo.cookie;
+        }
     });
 
     const uiConfig = {
@@ -129,13 +136,13 @@ async function initializePlayer() {
 
     try {
         await player.load(streamInfo.streamUrl);
-        console.log('Star Sports 1 HD Loaded');
+        console.log(streamInfo.name + ' successfully loaded');
     } catch (error) {
-        console.error("Error loading stream:", error);
+        console.error("Playback Error:", error);
     }
 }
 
-// --- Custom Components ---
+// --- Custom Components (Buttons & Stats) ---
 
 class SkipForwardButton extends shaka.ui.Element {
     constructor(parent, controls) {
