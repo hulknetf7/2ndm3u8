@@ -4,213 +4,70 @@
     <title>Shaka Player - Star Sports 1 HD</title>
     <meta name="referrer" content="no-referrer">
     <meta charset="UTF-8">
-    <meta name="color-scheme" content="light dark">
-    <meta name="theme-color" content="#000">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    
-    <script>
-        // Polyfill for Shaka Player compatibility
-        if (!Map.prototype.getOrInsertComputed) {
-            Map.prototype.getOrInsertComputed = function (key, compute) {
-                if (!this.has(key)) {
-                    const value = compute();
-                    this.set(key, value);
-                    return value;
-                }
-                return this.get(key);
-            };
-        }
-        if (!Map.prototype.getOrInsert) {
-            Map.prototype.getOrInsert = function (key, value) {
-                if (!this.has(key)) {
-                    this.set(key, value);
-                    return value;
-                }
-                return this.get(key);
-            };
-        }
-    </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/shaka-player@5.0.4/dist/shaka-player.ui.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/shaka-player@5.0.4/dist/shaka-player.ui.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shaka-player@5.0.4/dist/controls.min.css">
-    
-    <style type="text/css">
-        @font-face { font-family: Roboto, sans-serif, 'Noto Sans', Arial, sans-serif; }
-        * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-        body { margin: 0; padding: 0; background-color: #000; color: white; font-family: Arial, sans-serif; overflow: hidden; height: 100dvh; width: 100dvw; }
-        #app { width: 100dvw; height: 100dvh; display: flex; flex-direction: column; background: #000; }
-        #shakaplayer { position: relative; width: 100dvw; height: 100dvh; background-color: black; }
-        .shaka-video-container { position: relative; width: 100%; height: 100%; }
-        .shaka-video { width: 100%; height: 100%; object-fit: contain; }
-
-        /* Stats Overlay */
-        .shaka-stream-stats { 
-            position: absolute; top: 10px; left: 10px; z-index: 30; 
-            background: rgba(0, 0, 0, 0.45); border-radius: 6px; padding: 8px; 
-            font-size: 12px; font-weight: 600; color: #fff; 
-            pointer-events: none; opacity: 0; transition: opacity 0.35s ease;
-        }
-        .shaka-stream-stats.visible { opacity: 1; }
-        .stat-res { color: #b4dcff; }
-        .stat-bw { color: #b4ffd2; }
-        .stat-data { color: #ffe4b4; }
-
-        /* UI Icons & Buttons */
-        .shaka-video-container .shaka-ui-icon { font-size: 35px !important; }
-        .shaka-bottom-controls { width: 96%; padding-bottom: 1%; }
-        .shaka-controls-button-panel > * { color: #fff; background: none; border: 0; cursor: pointer; }
+    <style>
+        body { margin: 0; background: #000; width: 100vw; height: 100vh; overflow: hidden; }
+        .shaka-video-container { width: 100%; height: 100%; }
+        video { width: 100%; height: 100%; }
     </style>
 </head>
 <body>
 
-<div id="app">
-    <div id="shakaplayer">
-        <div class="shaka-video-container">
-            <video autoplay id="video" class="shaka-video"></video>
-        </div>
-    </div>
+<div id="shakaplayer" class="shaka-video-container">
+    <video autoplay id="video" poster="https://img.media.jio.com/tvpimages/76/32/301981_1749665664018_l_medium.jpg"></video>
 </div>
 
 <script>
-let player;
-let ui;
-window.shakaSessionUsageMB = 0;
+async function initPlayer() {
+    const video = document.getElementById('video');
+    const container = document.getElementById('shakaplayer');
+    const player = new shaka.Player();
+    const ui = new shaka.ui.Overlay(player, container, video);
 
-async function initializePlayer() {
-    const videoContainer = document.querySelector('.shaka-video-container');
-    const videoElement = document.getElementById('video');
-
-    // --- DATA UPDATED FROM JSON ---
-    const streamInfo = {
-        name: "Star Sports 1 HD",
-        streamUrl: "https://jiotvmblive.cdn.jio.com//bpk-tv/Star_Sports_HD1_BTS/output/index.mpd",
+    const streamData = {
+        url: "https://jiotvmblive.cdn.jio.com//bpk-tv/Star_Sports_HD1_BTS/output/index.mpd",
         cookie: "__hdnea__=st=1774866416~exp=1774952816~acl=/*~hmac=965e1a550b5e18fb744cd0de1d8ff04404b14c26c3a9457f82baa3fc37a5d3fe",
-        clearKeys: {
-            "965dc2ddb1d85138ad787999a7f30ca5": "859695076e67fe961836b564db6d689c"
-        },
-        poster: "https://img.media.jio.com/tvpimages/76/32/301981_1749665664018_l_medium.jpg",
-        userAgent: "@allinone_reborn"
+        keys: { "965dc2ddb1d85138ad787999a7f30ca5": "859695076e67fe961836b564db6d689c" }
     };
 
-    videoElement.poster = streamInfo.poster;
-    videoElement.muted = true;
-    videoElement.autoplay = true;
-
-    player = new shaka.Player();
-
-    // Handling Cookie & User-Agent
+    // --- NETWORK FILTER ---
     player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        request.headers['Cookie'] = streamInfo.cookie;
-        request.headers['User-Agent'] = streamInfo.userAgent;
-        
-        // Append cookie to URL if needed for some CDNs
-        if (type === shaka.net.NetworkingEngine.RequestType.SEGMENT || type === shaka.net.NetworkingEngine.RequestType.MANIFEST) {
-            const separator = request.uris[0].includes('?') ? '&' : '?';
-            request.uris[0] += separator + streamInfo.cookie;
-        }
+        // 1. Cookie ko URL parameters mein add karna (Better for Manifest/Segments)
+        const separator = request.uris[0].includes('?') ? '&' : '?';
+        request.uris[0] += separator + streamData.cookie;
+
+        // 2. Headers add karna (Agar browser allow kare)
+        request.headers['Cookie'] = streamData.cookie;
     });
 
-    const uiConfig = {
-        controlPanelElements: [
-            'time_and_duration', 'mute', 'volume', 'skip_backward_5', 
-            'skip_forward_5', 'stream_stats', 'play_pause', 'spacer', 
-            'quality', 'overflow_menu', 'picture_in_picture', 'fullscreen'
-        ],
-        seekBarColors: {
-            base: 'rgba(255, 255, 255, 0.3)',
-            buffered: 'rgba(63, 133, 244, 0.65)',
-            played: 'rgb(229, 9, 31)'
-        },
-        addSeekBar: true
-    };
-
-    ui = new shaka.ui.Overlay(player, videoContainer, videoElement);
-    
-    await player.attach(videoElement);
-    ui.configure(uiConfig);
-
     player.configure({
-        manifest: { dash: { ignoreMinBufferTime: true } },
-        drm: { clearKeys: streamInfo.clearKeys }
+        drm: { clearKeys: streamData.keys },
+        manifest: { 
+            dash: { ignoreMinBufferTime: true },
+            retryParameters: { maxAttempts: 5 } 
+        },
+        streaming: {
+            bufferingGoal: 30,
+            rebufferingGoal: 10
+        }
     });
 
     try {
-        await player.load(streamInfo.streamUrl);
-        console.log(streamInfo.name + ' successfully loaded');
-    } catch (error) {
-        console.error("Playback Error:", error);
+        // Final URL with Cookie
+        const finalUrl = streamData.url + "?" + streamData.cookie;
+        await player.load(finalUrl);
+        console.log("Playing...");
+    } catch (e) {
+        console.error("Error code", e.code, "object", e);
+        
+        // Agar fir bhi na chale, toh Error 1001/403 check karein
+        if(e.code == 1001) alert("CORS Error: Browser ne request block kar di hai.");
     }
 }
 
-// --- Custom Components (Buttons & Stats) ---
-
-class SkipForwardButton extends shaka.ui.Element {
-    constructor(parent, controls) {
-        super(parent, controls);
-        this.button_ = document.createElement('button');
-        this.button_.innerHTML = '<svg class="shaka-ui-icon" viewBox="0 -960 960 960"><path d="M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-800h6l-62-62 56-58 160 160-160 160-56-58 62-62h-6q-117 0-198.5 81.5T200-440q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440h80q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80ZM380-320v-60h120v-40H380v-140h180v60H440v40h80q17 0 28.5 11.5T560-420v60q0 17-11.5 28.5T520-320H380Z"/></svg>';
-        this.parent.appendChild(this.button_);
-        this.eventManager.listen(this.button_, 'click', () => {
-            this.video.currentTime = Math.min(this.video.currentTime + 5, this.video.duration);
-        });
-    }
-}
-shaka.ui.Controls.registerElement('skip_forward_5', { create: (root, ctrl) => new SkipForwardButton(root, ctrl) });
-
-class SkipBackwardButton extends shaka.ui.Element {
-    constructor(parent, controls) {
-        super(parent, controls);
-        this.button_ = document.createElement('button');
-        this.button_.innerHTML = '<svg class="shaka-ui-icon" viewBox="0 -960 960 960"><path d="M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440h80q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l62 62-56 58-160-160 160-160 56 58-62 62h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80ZM380-320v-60h120v-40H380v-140h180v60H440v40h80q17 0 28.5 11.5T560-420v60q0 17-11.5 28.5T520-320H380Z"/></svg>';
-        this.parent.appendChild(this.button_);
-        this.eventManager.listen(this.button_, 'click', () => {
-            this.video.currentTime = Math.max(this.video.currentTime - 5, 0);
-        });
-    }
-}
-shaka.ui.Controls.registerElement('skip_backward_5', { create: (root, ctrl) => new SkipBackwardButton(root, ctrl) });
-
-class StreamStatsElement extends shaka.ui.Element {
-    constructor(parent, controls) {
-        super(parent, controls);
-        this.container = document.createElement('div');
-        this.container.className = 'shaka-stream-stats';
-        controls.getControlsContainer().appendChild(this.container);
-
-        const observer = new MutationObserver(() => {
-            const shown = controls.getControlsContainer().getAttribute('shown') === 'true';
-            this.container.classList.toggle('visible', shown);
-        });
-        observer.observe(controls.getControlsContainer(), { attributes: true, attributeFilter: ['shown'] });
-
-        this.lastBytes = 0;
-        this.timer = setInterval(() => this.update(), 1000);
-    }
-
-    update() {
-        const stats = this.player.getStats();
-        const activeTrack = this.player.getVariantTracks().find(t => t.active);
-        let bytes = stats.bytesDownloaded || 0;
-        if (bytes > this.lastBytes) {
-            window.shakaSessionUsageMB += (bytes - this.lastBytes) / (1024 * 1024);
-            this.lastBytes = bytes;
-        }
-        this.container.innerHTML = `
-            <span class="stat-res">${activeTrack ? activeTrack.height + 'p' : '--'}</span><br>
-            <span class="stat-bw">${activeTrack ? Math.round(activeTrack.bandwidth / 1000) + 'kbps' : '--'}</span><br>
-            <span class="stat-data">${window.shakaSessionUsageMB.toFixed(1)} MB</span>
-        `;
-    }
-
-    release() {
-        clearInterval(this.timer);
-        super.release();
-    }
-}
-shaka.ui.Controls.registerElement('stream_stats', { create: (root, ctrl) => new StreamStatsElement(root, ctrl) });
-
-document.addEventListener('shaka-ui-loaded', initializePlayer);
+document.addEventListener('shaka-ui-loaded', initPlayer);
+document.addEventListener('DOMContentLoaded', () => { if(!window.shaka) initPlayer(); });
 </script>
-
 </body>
 </html>
